@@ -15,6 +15,7 @@ func NewSQLiteConnection(path string) (*sql.DB, error) {
 	query := `
 	CREATE TABLE IF NOT EXISTS events (
 		id TEXT PRIMARY KEY,
+		session_id TEXT,
 		trace_id TEXT,
 		name TEXT NOT NULL,
 		timestamp INTEGER NOT NULL,

@@ -12,6 +12,13 @@ type Store struct {
 	db *sql.DB
 }
 
+type EventFilters struct {
+	Limit     int
+	Type      string
+	TraceID   string
+	SessionID string
+}
+
 func NewStore(db *sql.DB) *Store {
 	return &Store{
 		db: db,
@@ -37,6 +44,7 @@ func (s *Store) Add(event Event) (Event, error) {
 	_, err = s.db.Exec(`
 	INSERT INTO events (
 		id,
+		session_id,
 		trace_id,
 		name,
 		timestamp,
@@ -44,9 +52,10 @@ func (s *Store) Add(event Event) (Event, error) {
 		type,
 		duration,
 		metadata
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `,
 		event.ID,
+		event.SessionID,
 		event.TraceID,
 		event.Name,
 		event.Timestamp,
@@ -68,12 +77,39 @@ func (s *Store) Clear() error {
 	return err
 }
 
-func (s *Store) GetAll() ([]Event, error) {
-	rows, err := s.db.Query(`
-		SELECT id, trace_id, name, timestamp, received_at, type, duration, metadata
+func (s *Store) GetAll(filters EventFilters) ([]Event, error) {
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `
+		SELECT id, session_id, trace_id, name, timestamp, received_at, type, duration, metadata
 		FROM events
-		ORDER BY timestamp ASC
-	`)
+		WHERE 1=1
+	`
+
+	args := []any{}
+
+	if filters.Type != "" {
+		query += " AND type = ?"
+		args = append(args, filters.Type)
+	}
+
+	if filters.TraceID != "" {
+		query += " AND trace_id = ?"
+		args = append(args, filters.TraceID)
+	}
+
+	if filters.SessionID != "" {
+		query += " AND session_id = ?"
+		args = append(args, filters.SessionID)
+	}
+
+	query += " ORDER BY timestamp DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -83,27 +119,40 @@ func (s *Store) GetAll() ([]Event, error) {
 
 	for rows.Next() {
 		var event Event
+		var duration sql.NullFloat64
 		var metadataString sql.NullString
 
-		err := rows.Scan(
+		if err := rows.Scan(
 			&event.ID,
+			&event.SessionID,
 			&event.TraceID,
 			&event.Name,
 			&event.Timestamp,
 			&event.ReceivedAt,
 			&event.Type,
-			&event.Duration,
+			&duration,
 			&metadataString,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 
+		if duration.Valid {
+			event.Duration = &duration.Float64
+		}
+
 		if metadataString.Valid && metadataString.String != "" {
-			json.Unmarshal([]byte(metadataString.String), &event.Metadata)
+			if err := json.Unmarshal([]byte(metadataString.String), &event.Metadata); err != nil {
+				event.Metadata = map[string]interface{}{
+					"parseError": err.Error(),
+				}
+			}
 		}
 
 		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return events, nil

@@ -2,8 +2,10 @@ package events
 
 import (
 	"encoding/json"
-	"github.com/Sanja969/tracebeam-studio-server/internal/realtime"
 	"net/http"
+	"strconv"
+
+	"github.com/Sanja969/tracebeam-studio-server/internal/realtime"
 )
 
 type Handler struct {
@@ -19,7 +21,22 @@ func NewHandler(store *Store, hub *realtime.Hub) *Handler {
 }
 
 func (h *Handler) GetEvents(w http.ResponseWriter, r *http.Request) {
-	events, err := h.store.GetAll()
+	limit := 100
+	queryLimit := r.URL.Query().Get("limit")
+
+	if queryLimit != "" {
+		convertedLimit, err := strconv.Atoi(queryLimit)
+		if err == nil && convertedLimit > 0 && convertedLimit <= 500 {
+			limit = convertedLimit
+		}
+	}
+
+	events, err := h.store.GetAll(EventFilters{
+		Limit:     limit,
+		Type:      r.URL.Query().Get("type"),
+		TraceID:   r.URL.Query().Get("traceId"),
+		SessionID: r.URL.Query().Get("sessionId"),
+	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": "failed to load events",
@@ -32,11 +49,11 @@ func (h *Handler) GetEvents(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ClearEvents(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.Clear(); err != nil {
-	writeJSON(w, http.StatusInternalServerError, map[string]string{
-		"error": "failed to clear events",
-	})
-	return
-}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to clear events",
+		})
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"message": "events cleared",
