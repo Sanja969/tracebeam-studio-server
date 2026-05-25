@@ -49,3 +49,11 @@ Clears all events.
 ### WS /ws
 
 Realtime event stream.
+
+## Status
+
+Tracebeam Studio Server is under active development.
+
+## License
+
+MIT
