@@ -50,9 +50,9 @@ Clears all events.
 
 Realtime event stream.
 
-## Status
+## Current status
 
-Tracebeam Studio Server is under active development.
+Tracebeam Studio is actively being developed and expanded with additional observability tooling features.
 
 ## License
 
